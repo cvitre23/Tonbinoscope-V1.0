@@ -1,0 +1,314 @@
+import {
+  schoolYear, openVault, readCurrent, replaceRecord, newSalt,
+  deriveKey, encryptDirectory, decryptDirectory
+} from './vault.js';
+
+const el = id => document.getElementById(id);
+const say = message => { el('message').textContent = message; };
+const avatars = ['🦊', '🐼', '🐸', '🦉', '🐱', '🐻', '🐰', '🐨'];
+let db;
+let record;
+let directory;
+let key;
+let activeClass;
+let session = 0;
+let busy = false;
+
+function demoDirectory() {
+  return [
+    ['CE1 des Étoiles', ['Alba', 'Milo', 'Nino', 'Lila']],
+    ['CM2 des Nuages', ['Olympe', 'Noé', 'Iris', 'Sacha']]
+  ].map(([name, firstNames], group) => ({
+    id: crypto.randomUUID(), name,
+    students: firstNames.map((name, index) => ({
+      id: crypto.randomUUID(), name, avatar: index + group * 4
+    }))
+  }));
+}
+
+function showLock() {
+  el('locked').hidden = false;
+  el('unlocked').hidden = true;
+  el('unlock').hidden = !db;
+  el('reset').hidden = !record;
+  el('lock-title').textContent = record ? 'Trombinoscope verrouillé' : 'Créer un espace de test';
+  el('lock-help').textContent = record
+    ? 'Saisis ton mot de passe de test pour afficher les classes.'
+    : 'Choisis au moins 8 caractères. Deux classes fictives seront ajoutées.';
+  el('unlock-button').textContent = record ? 'Déverrouiller' : 'Créer l’espace de test';
+  el('password').minLength = record ? 1 : 8;
+  el('password').autocomplete = record ? 'current-password' : 'new-password';
+}
+
+function lock() {
+  session++;
+  directory = key = activeClass = undefined;
+  for (const id of ['unlock', 'add-class', 'add-student']) el(id).reset();
+  for (const id of ['students', 'classes']) el(id).replaceChildren();
+  for (const id of ['class-title', 'empty']) el(id).textContent = '';
+  if (db) showLock();
+  say('');
+}
+
+async function refreshRecord() {
+  const current = await readCurrent(db, schoolYear());
+  record = current.record;
+  if (current.expired) {
+    lock();
+    say('Les données de l’année précédente ont été effacées.');
+  }
+  return current.expired;
+}
+
+function showDirectory() {
+  el('locked').hidden = true;
+  el('unlocked').hidden = false;
+  const current = directory.find(group => group.id === activeClass) || directory[0];
+  activeClass = current?.id;
+  el('classes').replaceChildren(...directory.map(group => new Option(group.name, group.id)));
+  if (current) el('classes').value = current.id;
+  el('classes').disabled = !current;
+  el('remove-class').hidden = !current;
+  el('student-panel').hidden = !current;
+  el('class-title').textContent = current?.name || '';
+  el('empty').textContent = !current ? 'Ajoute une classe pour commencer.'
+    : current.students.length ? '' : 'Cette classe ne contient aucune fiche.';
+  el('students').replaceChildren(...(current?.students || []).map(student => {
+    const card = document.createElement('li');
+    card.className = 'card';
+    const portrait = document.createElement(student.photo ? 'img' : 'span');
+    if (student.photo) {
+      portrait.src = student.photo;
+      portrait.alt = '';
+    } else {
+      portrait.className = 'avatar';
+      portrait.setAttribute('aria-hidden', 'true');
+      portrait.textContent = avatars[student.avatar];
+    }
+    const name = document.createElement('p');
+    name.textContent = student.name;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'plain';
+    remove.textContent = 'Supprimer';
+    remove.setAttribute('aria-label', 'Supprimer la fiche de ' + student.name);
+    remove.addEventListener('click', () => run(async token => {
+      if (!confirm('Supprimer cette fiche fictive ?')) return;
+      const next = directory.map(group => group.id === current.id
+        ? { ...group, students: group.students.filter(item => item.id !== student.id) }
+        : group);
+      await save(next, token, current.id, 'Fiche supprimée.');
+    }));
+    card.append(portrait, name, remove);
+    return card;
+  }));
+}
+
+async function run(operation) {
+  if (busy) return;
+  busy = true;
+  const token = session;
+  try {
+    await operation(token);
+  } catch (error) {
+    if (token === session) say(error.message || 'L’action a échoué.');
+  } finally {
+    busy = false;
+  }
+}
+
+async function save(next, token, selected, message) {
+  if (token !== session || !key) return false;
+  const previous = record;
+  if (previous.year < schoolYear()) {
+    await refreshRecord();
+    return false;
+  }
+  const candidate = await encryptDirectory(next, key, previous.salt, previous.year);
+  if (token !== session) return false;
+  if (!await replaceRecord(db, previous.revision, candidate)) {
+    lock();
+    await refreshRecord();
+    showLock();
+    say('Les données ont changé dans une autre fenêtre. Ouvre de nouveau l’espace de test.');
+    return false;
+  }
+  if (token !== session) return false;
+  record = candidate;
+  directory = next;
+  activeClass = selected;
+  showDirectory();
+  say(message);
+  return true;
+}
+
+async function unlock(token, password) {
+  if (await refreshRecord() || token !== session) return;
+  showLock();
+  const previous = record;
+  if (!previous && password.length < 8) throw new Error('Choisis au moins 8 caractères.');
+  const salt = previous?.salt || newSalt();
+  const nextKey = await deriveKey(password, salt);
+  if (token !== session) return;
+  let next;
+  if (previous) {
+    try {
+      next = await decryptDirectory(previous, nextKey);
+    } catch {
+      throw new Error('Mot de passe incorrect ou données illisibles.');
+    }
+    const latest = await readCurrent(db, schoolYear());
+    if (token !== session) return;
+    if (latest.record?.revision !== previous.revision) {
+      record = latest.record;
+      showLock();
+      say(latest.expired ? 'Les données de l’année précédente ont été effacées.'
+        : 'Les données ont changé. Réessaie.');
+      return;
+    }
+  } else {
+    next = demoDirectory();
+    const candidate = await encryptDirectory(next, nextKey, salt, schoolYear());
+    if (token !== session) return;
+    if (!await replaceRecord(db, undefined, candidate)) {
+      await refreshRecord();
+      if (token === session) {
+        showLock();
+        say('Un espace de test existe déjà. Déverrouille-le.');
+      }
+      return;
+    }
+    if (token !== session) return;
+    record = candidate;
+  }
+  key = nextKey;
+  directory = next;
+  showDirectory();
+  el('directory-title').focus();
+}
+
+async function resizeImage(file) {
+  if (!file) return undefined;
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) {
+    throw new Error('Choisis une image fictive JPEG, PNG ou WebP de 12 Mo maximum.');
+  }
+  const source = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = source;
+    await image.decode();
+    const size = Math.min(320, image.naturalWidth, image.naturalHeight);
+    const side = Math.min(image.naturalWidth, image.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const context = canvas.getContext('2d', { alpha: false });
+    context.drawImage(image, (image.naturalWidth - side) / 2,
+      (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  } catch {
+    throw new Error('Cette image n’a pas pu être lue.');
+  } finally {
+    URL.revokeObjectURL(source);
+  }
+}
+
+el('unlock').addEventListener('submit', event => {
+  event.preventDefault();
+  const password = el('password').value;
+  el('password').value = '';
+  run(token => unlock(token, password));
+});
+el('reset').addEventListener('click', () => run(async token => {
+  if (!confirm('Effacer définitivement toutes les données de test de cet appareil ?')) return;
+  if (token !== session) return;
+  const deleted = await replaceRecord(db, record?.revision, undefined);
+  if (token !== session) return;
+  await refreshRecord();
+  if (token !== session) return;
+  showLock();
+  say(deleted ? 'Données de test effacées.' : 'Les données ont changé. Réessaie.');
+}));
+el('lock').addEventListener('click', () => {
+  lock();
+  el('password').focus();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) lock();
+});
+window.addEventListener('pagehide', lock);
+
+el('classes').addEventListener('change', event => {
+  activeClass = event.target.value;
+  showDirectory();
+  el('classes').focus();
+});
+el('add-class').addEventListener('submit', event => {
+  event.preventDefault();
+  run(async token => {
+    const name = el('class-name').value.trim();
+    if (!name) throw new Error('Saisis un nom de classe.');
+    const group = { id: crypto.randomUUID(), name, students: [] };
+    if (await save([...directory, group], token, group.id, 'Classe ajoutée.')) event.target.reset();
+  });
+});
+el('remove-class').addEventListener('click', () => run(async token => {
+  const group = directory.find(item => item.id === activeClass);
+  if (!group || !confirm('Supprimer la classe « ' + group.name + ' » et toutes ses fiches ?')) return;
+  await save(directory.filter(item => item.id !== group.id), token, undefined, 'Classe supprimée.');
+}));
+el('add-student').addEventListener('submit', event => {
+  event.preventDefault();
+  run(async token => {
+    const classId = activeClass;
+    const name = el('first-name').value.trim();
+    if (!name) throw new Error('Saisis un prénom fictif.');
+    const photo = await resizeImage(el('photo').files[0]);
+    if (token !== session) return;
+    const student = {
+      id: crypto.randomUUID(), name, photo, avatar: Math.floor(Math.random() * avatars.length)
+    };
+    const next = directory.map(group => group.id === classId
+      ? { ...group, students: [...group.students, student] } : group);
+    if (await save(next, token, activeClass, 'Fiche ajoutée.')) event.target.reset();
+  });
+});
+
+async function enableOffline() {
+  try {
+    if (!('serviceWorker' in navigator)) throw new Error();
+    const worker = navigator.serviceWorker;
+    const ready = () => { el('offline').textContent = 'Mode hors ligne prêt sur cet appareil.'; };
+    worker.addEventListener('controllerchange', () => { if (worker.controller) ready(); });
+    const registration = await worker.register('./sw.js');
+    if (worker.controller) ready();
+    const pending = registration.installing || registration.waiting;
+    if (pending) pending.addEventListener('statechange', () => {
+      if (pending.state === 'redundant' && !worker.controller) {
+        el('offline').textContent = 'Mode hors ligne indisponible. Recharge la page avec une connexion.';
+      }
+    });
+  } catch {
+    el('offline').textContent = 'Mode hors ligne indisponible dans ce navigateur.';
+  }
+}
+
+async function start() {
+  if (!window.isSecureContext || !crypto.subtle || location.protocol === 'file:') {
+    el('lock-title').textContent = 'Ouvre l’adresse HTTPS';
+    el('lock-help').textContent = 'Publie les fichiers sur GitHub Pages puis ouvre le lien du site.';
+    el('offline').textContent = '';
+    return;
+  }
+  enableOffline();
+  try {
+    db = await openVault();
+    await refreshRecord();
+    showLock();
+  } catch {
+    el('unlock').hidden = true;
+    el('lock-title').textContent = 'Stockage local indisponible';
+    el('lock-help').textContent = 'Vérifie les réglages de Safari ou du navigateur, puis recharge la page.';
+  }
+}
+
+start();

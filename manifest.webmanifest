@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "Trombinoscope de démonstration",
+  "short_name": "Trombinoscope",
+  "description": "Trombinoscope scolaire avec des données fictives.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f1",
+  "theme_color": "#163a34",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

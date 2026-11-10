@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#163a34">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Trombinoscope de démonstration</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon-192.png">
+  <link rel="apple-touch-icon" href="./icon-180.png">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">DÉMONSTRATION SCOLAIRE</p>
+      <h1>Trombinoscope</h1>
+      <p>Les classes et leurs portraits, sur cet appareil.</p>
+    </div>
+  </header>
+  <main class="wrap">
+    <p class="notice"><strong>Données fictives uniquement.</strong> Touch ID n’est pas implémenté. Ce prototype ne convient pas aux photos ni aux données réelles d’élèves.</p>
+    <p id="offline" class="small" role="status">Préparation du mode hors ligne…</p>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section id="locked" class="panel" aria-labelledby="lock-title">
+      <h2 id="lock-title">Chargement…</h2>
+      <p id="lock-help"></p>
+      <form id="unlock" hidden>
+        <label for="password">Mot de passe de test</label>
+        <input id="password" type="password" required maxlength="128" autocapitalize="off" spellcheck="false">
+        <button id="unlock-button">Ouvrir</button>
+      </form>
+      <button id="reset" class="plain" type="button" hidden>Effacer les données de test</button>
+    </section>
+    <section id="unlocked" hidden aria-labelledby="directory-title">
+      <div class="section-head">
+        <h2 id="directory-title" tabindex="-1">Mes classes</h2>
+        <button id="lock" class="secondary" type="button">Verrouiller</button>
+      </div>
+      <div class="columns">
+        <section class="panel">
+          <label for="classes">Classe affichée</label>
+          <div class="row">
+            <select id="classes"></select>
+            <button id="remove-class" class="plain" type="button">Supprimer la classe</button>
+          </div>
+          <form id="add-class">
+            <label for="class-name">Nom de la nouvelle classe</label>
+            <input id="class-name" maxlength="50" required>
+            <button>Ajouter la classe</button>
+          </form>
+        </section>
+        <section id="student-panel" class="panel">
+          <h3>Ajouter une fiche fictive</h3>
+          <form id="add-student">
+            <label for="first-name">Prénom fictif</label>
+            <input id="first-name" maxlength="50" required autocomplete="off">
+            <label for="photo">Image fictive facultative (JPEG, PNG ou WebP)</label>
+            <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="photo-help">
+            <small id="photo-help">Sans image, la fiche affiche un avatar illustré.</small>
+            <button>Ajouter la fiche</button>
+          </form>
+        </section>
+      </div>
+      <h3 id="class-title"></h3>
+      <p id="empty"></p>
+      <ul id="students" class="students" aria-labelledby="class-title"></ul>
+    </section>
+    <noscript>Active JavaScript dans le navigateur pour ouvrir le prototype.</noscript>
+  </main>
+</body>
+</html>

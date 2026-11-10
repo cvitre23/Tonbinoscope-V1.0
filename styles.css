@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f3f6f1;
+  color: #19362e;
+  line-height: 1.5;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body, h1, h2, h3, p { margin: 0; }
+body { padding-bottom: 2rem; }
+.wrap { width: min(100% - 2rem, 64rem); margin-inline: auto; }
+.hero { background: #163a34; color: #fff; padding-block: 1.75rem; }
+.eyebrow { color: #b9e3ce; letter-spacing: .12em; font-size: .78rem; font-weight: 700; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.7rem); line-height: 1.12; margin-block: .35rem; }
+h3 { margin-bottom: .5rem; }
+.notice, .panel { border-radius: 1rem; padding: 1rem; }
+.notice { background: #fff0c8; color: #523700; margin-block: 1rem .5rem; }
+.small, small { font-size: .88rem; color: #40594e; }
+#message:not(:empty) { margin-block: .6rem; font-weight: 650; }
+.panel { border: 1px solid #cad8cf; background: #fff; }
+#locked, .section-head { margin-block: .85rem; }
+#locked { max-width: 34rem; }
+.columns { display: grid; gap: 1rem; margin-bottom: 1.1rem; }
+@media (min-width: 43rem) {
+  .columns { grid-template-columns: 1fr 1fr; align-items: start; }
+}
+form { display: grid; gap: .4rem; margin-top: .65rem; }
+label { font-weight: 650; }
+button, input, select {
+  font: inherit;
+  border-radius: .6rem;
+  min-height: 44px;
+  padding: .45rem .7rem;
+}
+input, select { border: 1px solid #82978b; background: #fff; color: inherit; width: 100%; min-width: 0; }
+button { border: 1px solid transparent; background: #215e4e; color: #fff; cursor: pointer; font-weight: 650; }
+button:disabled { opacity: .55; cursor: default; }
+.secondary { border-color: #668379; background: #fff; color: #164d40; }
+.plain { background: transparent; color: #8a322a; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #126cbd; outline-offset: 2px; }
+form button, #reset { justify-self: start; margin-top: .2rem; }
+.row, .section-head { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.row select { flex: 1 1 10rem; }
+.students { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .75rem; list-style: none; margin: 0; padding: 0; }
+.card { background: white; border: 1px solid #cad8cf; border-radius: .85rem; text-align: center; padding: .75rem; overflow-wrap: anywhere; }
+.card img { display: block; margin: 0 auto .45rem; width: 80px; height: 80px; object-fit: cover; border-radius: 50%; background: #e4f2e9; }
+.avatar { display: grid; place-items: center; margin: 0 auto .45rem; width: 80px; height: 80px; border-radius: 50%; background: #d8ece0; font-size: 2.35rem; }
