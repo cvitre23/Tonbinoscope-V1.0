@@ -13,6 +13,9 @@ let key;
 let activeClass;
 let session = 0;
 let busy = false;
+let editingStudent;
+let draftPhoto;
+let photoSelection = 0;
 
 function demoDirectory() {
   return [
@@ -43,11 +46,33 @@ function showLock() {
 function lock() {
   session++;
   directory = key = activeClass = undefined;
-  for (const id of ['unlock', 'add-class', 'add-student']) el(id).reset();
+  for (const id of ['unlock', 'add-class']) el(id).reset();
+  resetStudentForm();
   for (const id of ['students', 'classes']) el(id).replaceChildren();
   for (const id of ['class-title', 'empty']) el(id).textContent = '';
   if (db) showLock();
   say('');
+}
+
+function showPhoto(photo) {
+  const preview = el('photo-preview');
+  if (photo) preview.src = photo;
+  else preview.removeAttribute('src');
+  preview.hidden = !photo;
+}
+
+function resetStudentForm(student) {
+  photoSelection++;
+  editingStudent = student?.id;
+  draftPhoto = student?.photo;
+  el('add-student').reset();
+  el('first-name').value = student?.name || '';
+  el('student-form-title').textContent = student ? 'Modifier la fiche' : 'Ajouter une fiche fictive';
+  el('save-student').textContent = student ? 'Enregistrer la fiche' : 'Ajouter la fiche';
+  el('save-student').disabled = false;
+  el('cancel-edit').hidden = !student;
+  el('photo-status').textContent = '';
+  showPhoto(draftPhoto);
 }
 
 async function refreshRecord() {
@@ -87,6 +112,16 @@ function showDirectory() {
     }
     const name = document.createElement('p');
     name.textContent = student.name;
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'secondary';
+    edit.textContent = 'Modifier';
+    edit.setAttribute('aria-label', 'Modifier la fiche de ' + student.name);
+    edit.addEventListener('click', () => {
+      if (busy) return;
+      resetStudentForm(student);
+      el('first-name').focus();
+    });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'plain';
@@ -97,9 +132,11 @@ function showDirectory() {
       const next = directory.map(group => group.id === current.id
         ? { ...group, students: group.students.filter(item => item.id !== student.id) }
         : group);
-      await save(next, token, current.id, 'Fiche supprimée.');
+      if (await save(next, token, current.id, 'Fiche supprimée.') && editingStudent === student.id) {
+        resetStudentForm();
+      }
     }));
-    card.append(portrait, name, remove);
+    card.append(portrait, name, edit, remove);
     return card;
   }));
 }
@@ -136,6 +173,7 @@ async function save(next, token, selected, message) {
   if (token !== session) return false;
   record = candidate;
   directory = next;
+  if (activeClass !== selected) resetStudentForm();
   activeClass = selected;
   showDirectory();
   say(message);
@@ -188,9 +226,10 @@ async function unlock(token, password) {
 }
 
 async function resizeImage(file) {
-  if (!file) return undefined;
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) {
-    throw new Error('Choisis une image fictive JPEG, PNG ou WebP de 12 Mo maximum.');
+  const supported = /^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) ||
+    (!file.type && /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name));
+  if (!supported || file.size > 25 * 1024 * 1024) {
+    throw new Error('Choisis une photo fictive JPEG, PNG, WebP, HEIC ou HEIF de 25 Mo maximum.');
   }
   const source = URL.createObjectURL(file);
   try {
@@ -206,11 +245,41 @@ async function resizeImage(file) {
       (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
     return canvas.toDataURL('image/jpeg', 0.8);
   } catch {
-    throw new Error('Cette image n’a pas pu être lue.');
+    throw new Error('Ce navigateur ne peut pas lire cette image. Essaie avec une photo JPEG.');
   } finally {
     URL.revokeObjectURL(source);
   }
 }
+
+async function selectPhoto(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file || !directory || busy) return;
+  const selection = ++photoSelection;
+  const status = el('photo-status');
+  el('save-student').disabled = true;
+  status.textContent = 'Préparation de la photo…';
+  try {
+    const photo = await resizeImage(file);
+    if (selection !== photoSelection) return;
+    draftPhoto = photo;
+    showPhoto(photo);
+    status.textContent = 'Photo prête. Enregistre la fiche pour la conserver.';
+  } catch (error) {
+    if (selection === photoSelection) status.textContent = error.message;
+  } finally {
+    if (selection === photoSelection) el('save-student').disabled = false;
+  }
+}
+
+for (const [button, field] of [['take-photo', 'camera-file'], ['import-photo', 'library-file']]) {
+  const input = el(field);
+  el(button).addEventListener('click', () => { if (directory && !busy) input.click(); });
+  input.addEventListener('change', () => selectPhoto(input));
+}
+el('cancel-edit').addEventListener('click', () => {
+  if (!busy) resetStudentForm();
+});
 
 el('unlock').addEventListener('submit', event => {
   event.preventDefault();
@@ -232,12 +301,26 @@ el('lock').addEventListener('click', () => {
   lock();
   el('password').focus();
 });
+function checkYearOnReturn() {
+  if (record && record.year < schoolYear()) {
+    lock();
+    refreshRecord().catch(() => say('La vérification de l’année scolaire a échoué. Réessaie en déverrouillant.'));
+  }
+}
+
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) lock();
+  else checkYearOnReturn();
 });
 window.addEventListener('pagehide', lock);
+window.addEventListener('pageshow', event => { if (event.persisted) checkYearOnReturn(); });
 
 el('classes').addEventListener('change', event => {
+  if (busy) {
+    event.target.value = activeClass;
+    return;
+  }
+  resetStudentForm();
   activeClass = event.target.value;
   showDirectory();
   el('classes').focus();
@@ -258,18 +341,22 @@ el('remove-class').addEventListener('click', () => run(async token => {
 }));
 el('add-student').addEventListener('submit', event => {
   event.preventDefault();
+  if (el('save-student').disabled) return;
   run(async token => {
-    const classId = activeClass;
+    const group = directory.find(item => item.id === activeClass);
+    if (!group) return;
     const name = el('first-name').value.trim();
     if (!name) throw new Error('Saisis un prénom fictif.');
-    const photo = await resizeImage(el('photo').files[0]);
-    if (token !== session) return;
-    const student = {
-      id: crypto.randomUUID(), name, photo, avatar: Math.floor(Math.random() * avatars.length)
+    const previous = group.students.find(student => student.id === editingStudent);
+    const student = previous ? { ...previous, name, photo: draftPhoto } : {
+      id: crypto.randomUUID(), name, photo: draftPhoto, avatar: Math.floor(Math.random() * avatars.length)
     };
-    const next = directory.map(group => group.id === classId
-      ? { ...group, students: [...group.students, student] } : group);
-    if (await save(next, token, activeClass, 'Fiche ajoutée.')) event.target.reset();
+    const students = previous ? group.students.map(item => item.id === student.id ? student : item)
+      : [...group.students, student];
+    const next = directory.map(item => item.id === group.id ? { ...group, students } : item);
+    if (await save(next, token, group.id, previous ? 'Fiche modifiée.' : 'Fiche ajoutée.')) {
+      resetStudentForm();
+    }
   });
 });
 

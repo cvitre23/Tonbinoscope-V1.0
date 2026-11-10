@@ -27,6 +27,10 @@ h3 { margin-bottom: .5rem; }
 }
 form { display: grid; gap: .4rem; margin-top: .65rem; }
 label { font-weight: 650; }
+.photo-field { border: 0; padding: 0; margin: .25rem 0; min-width: 0; }
+.photo-field legend { font-weight: 650; padding: 0; }
+#photo-preview { display: block; width: 96px; height: 96px; object-fit: cover; border-radius: .6rem; margin-block: .4rem; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 button, input, select {
   font: inherit;
   border-radius: .6rem;
