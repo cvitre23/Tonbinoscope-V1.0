@@ -2,6 +2,7 @@ import {
   schoolYear, openVault, readCurrent, replaceRecord, newSalt,
   deriveKey, encryptDirectory, decryptDirectory
 } from './vault.js';
+import { createPasskey, readPasskey, protectKey, recoverKey } from './passkey.js';
 
 const el = id => document.getElementById(id);
 const say = message => { el('message').textContent = message; };
@@ -16,6 +17,9 @@ let busy = false;
 let editingStudent;
 let draftPhoto;
 let photoSelection = 0;
+let passkeySetup;
+let passkeyRequest;
+const supportsPasskeys = !!(window.PublicKeyCredential && navigator.credentials);
 
 function demoDirectory() {
   return [
@@ -34,6 +38,7 @@ function showLock() {
   el('unlocked').hidden = true;
   el('unlock').hidden = !db;
   el('reset').hidden = !record;
+  el('unlock-passkey').hidden = !record?.passkey || !supportsPasskeys;
   el('lock-title').textContent = record ? 'Trombinoscope verrouillé' : 'Créer un espace de test';
   el('lock-help').textContent = record
     ? 'Saisis ton mot de passe de test pour afficher les classes.'
@@ -45,6 +50,8 @@ function showLock() {
 
 function lock() {
   session++;
+  passkeyRequest?.abort();
+  clearPasskeySetup();
   directory = key = activeClass = undefined;
   for (const id of ['unlock', 'add-class']) el(id).reset();
   resetStudentForm();
@@ -88,6 +95,8 @@ async function refreshRecord() {
 function showDirectory() {
   el('locked').hidden = true;
   el('unlocked').hidden = false;
+  el('passkey-panel').hidden = !supportsPasskeys;
+  el('prepare-passkey').textContent = record.passkey ? 'Désactiver la clé d’accès' : 'Continuer';
   const current = directory.find(group => group.id === activeClass) || directory[0];
   activeClass = current?.id;
   el('classes').replaceChildren(...directory.map(group => new Option(group.name, group.id)));
@@ -161,7 +170,7 @@ async function save(next, token, selected, message) {
     await refreshRecord();
     return false;
   }
-  const candidate = await encryptDirectory(next, key, previous.salt, previous.year);
+  const candidate = await encryptDirectory(next, key, previous.salt, previous.year, previous.passkey);
   if (token !== session) return false;
   if (!await replaceRecord(db, previous.revision, candidate)) {
     lock();
@@ -173,6 +182,7 @@ async function save(next, token, selected, message) {
   if (token !== session) return false;
   record = candidate;
   directory = next;
+  if (passkeySetup) clearPasskeySetup();
   if (activeClass !== selected) resetStudentForm();
   activeClass = selected;
   showDirectory();
@@ -224,6 +234,138 @@ async function unlock(token, password) {
   showDirectory();
   el('directory-title').focus();
 }
+
+function clearPasskeySetup() {
+  passkeySetup = undefined;
+  el('passkey-setup').reset();
+  el('passkey-setup').hidden = false;
+  el('confirm-passkey').hidden = true;
+  el('confirm-passkey').textContent = 'Créer une clé d’accès';
+  el('cancel-passkey').hidden = true;
+  el('passkey-status').textContent = '';
+}
+
+async function requestPasskey(operation) {
+  const controller = new AbortController();
+  passkeyRequest = controller;
+  try {
+    return await operation(controller.signal);
+  } catch (error) {
+    if (error.name === 'NotAllowedError' || error.name === 'AbortError') {
+      throw new Error('Vérification annulée ou indisponible. Le mot de passe reste utilisable.');
+    }
+    throw error;
+  } finally {
+    passkeyRequest = undefined;
+  }
+}
+
+async function updatePasskey(previous, passkey, token) {
+  if (token !== session) return;
+  if (previous.year < schoolYear()) {
+    await refreshRecord();
+    return;
+  }
+  const { passkey: oldPasskey, ...fields } = previous;
+  const candidate = { ...fields, revision: crypto.randomUUID(), ...(passkey && { passkey }) };
+  if (!await replaceRecord(db, previous.revision, candidate)) {
+    if (token !== session) return;
+    lock();
+    await refreshRecord();
+    showLock();
+    say('Les données ont changé. Déverrouille de nouveau le Trombinoscope.');
+    return;
+  }
+  if (token !== session) return;
+  record = candidate;
+  clearPasskeySetup();
+  showDirectory();
+  say('');
+  el('passkey-status').textContent = passkey ? 'Clé d’accès activée.' : 'Clé d’accès désactivée dans le Trombinoscope.';
+}
+
+el('passkey-setup').addEventListener('submit', event => {
+  event.preventDefault();
+  if (busy || !key) return;
+  const password = el('passkey-password').value;
+  el('passkey-password').value = '';
+  run(async token => {
+    const previous = record;
+    const checkedKey = await deriveKey(password, previous.salt, !previous.passkey);
+    if (token !== session) return;
+    try {
+      await decryptDirectory(previous, checkedKey);
+    } catch {
+      throw new Error('Mot de passe incorrect ou données illisibles.');
+    }
+    if (token !== session) return;
+    if (previous.passkey) {
+      await updatePasskey(previous, undefined, token);
+      return;
+    }
+    passkeySetup = { key: checkedKey, record: previous };
+    el('passkey-setup').hidden = true;
+    el('confirm-passkey').hidden = false;
+    el('cancel-passkey').hidden = false;
+    el('confirm-passkey').focus();
+  });
+});
+
+el('confirm-passkey').addEventListener('click', () => run(async token => {
+  const pending = passkeySetup;
+  if (!pending) return;
+  if (!pending.credential) {
+    pending.credential = await requestPasskey(createPasskey);
+    if (token !== session) return;
+    el('confirm-passkey').textContent = 'Vérifier et activer la clé d’accès';
+    el('passkey-status').textContent = 'Vérifie que la clé d’accès peut ouvrir le coffre pour terminer.';
+    return;
+  }
+  const secret = await requestPasskey(signal => readPasskey(pending.credential, signal));
+  if (token !== session) {
+    new Uint8Array(secret).fill(0);
+    return;
+  }
+  const passkey = await protectKey(pending.credential, secret, pending.record, pending.key);
+  await updatePasskey(pending.record, passkey, token);
+}));
+
+el('cancel-passkey').addEventListener('click', () => {
+  if (!busy) clearPasskeySetup();
+});
+
+el('unlock-passkey').addEventListener('click', () => run(async token => {
+  const previous = record;
+  if (!previous?.passkey) return;
+  if (previous.year < schoolYear()) {
+    await refreshRecord();
+    return;
+  }
+  const secret = await requestPasskey(signal => readPasskey(previous.passkey, signal));
+  if (token !== session) {
+    new Uint8Array(secret).fill(0);
+    return;
+  }
+  let nextKey;
+  let next;
+  try {
+    nextKey = await recoverKey(previous, secret);
+    next = await decryptDirectory(previous, nextKey);
+  } catch {
+    throw new Error('La clé d’accès n’a pas pu ouvrir le coffre. Utilise le mot de passe.');
+  }
+  if (await refreshRecord() || token !== session) return;
+  if (record?.revision !== previous.revision) {
+    showLock();
+    say('Les données ont changé. Réessaie.');
+    return;
+  }
+  key = nextKey;
+  directory = next;
+  showDirectory();
+  say('');
+  el('directory-title').focus();
+}));
 
 async function resizeImage(file) {
   const supported = /^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) ||

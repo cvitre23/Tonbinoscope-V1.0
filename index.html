@@ -16,13 +16,13 @@
 <body>
   <header class="hero">
     <div class="wrap">
-      <p class="eyebrow">DÉMONSTRATION SCOLAIRE · V3.1</p>
+      <p class="eyebrow">DÉMONSTRATION SCOLAIRE · V3.2 BÊTA</p>
       <h1>Trombinoscope</h1>
       <p>Les classes et leurs portraits, sur cet appareil.</p>
     </div>
   </header>
   <main class="wrap">
-    <p class="notice"><strong>Données fictives uniquement.</strong> Touch ID n’est pas implémenté. Ce prototype ne convient pas aux photos ni aux données réelles d’élèves.</p>
+    <p class="notice"><strong>Données fictives uniquement.</strong> Le déverrouillage par clé d’accès est en test.</p>
     <p id="offline" class="small" role="status">Préparation du mode hors ligne…</p>
     <p id="message" role="status" aria-live="polite"></p>
     <section id="locked" class="panel" aria-labelledby="lock-title">
@@ -33,6 +33,7 @@
         <input id="password" type="password" required maxlength="128" autocapitalize="off" spellcheck="false">
         <button id="unlock-button">Ouvrir</button>
       </form>
+      <button id="unlock-passkey" class="secondary" type="button" hidden>Déverrouiller avec une clé d’accès</button>
       <button id="reset" class="plain" type="button" hidden>Effacer les données de test</button>
     </section>
     <section id="unlocked" hidden aria-labelledby="directory-title">
@@ -80,6 +81,20 @@
       <h3 id="class-title"></h3>
       <p id="empty"></p>
       <ul id="students" class="students" aria-labelledby="class-title"></ul>
+      <section id="passkey-panel" class="panel" aria-labelledby="passkey-title" hidden>
+        <h3 id="passkey-title">Clé d’accès</h3>
+        <p class="small">Ton appareil choisit la vérification, par exemple Touch ID ou son code. Garde le mot de passe du Trombinoscope pour le déverrouillage de secours.</p>
+        <form id="passkey-setup">
+          <label for="passkey-password">Confirme le mot de passe du Trombinoscope</label>
+          <input id="passkey-password" type="password" required maxlength="128" autocomplete="current-password">
+          <button id="prepare-passkey">Continuer</button>
+        </form>
+        <div class="actions">
+          <button id="confirm-passkey" type="button" hidden>Créer une clé d’accès</button>
+          <button id="cancel-passkey" class="secondary" type="button" hidden>Annuler</button>
+        </div>
+        <p id="passkey-status" class="small" role="status"></p>
+      </section>
     </section>
     <noscript>Active JavaScript dans le navigateur pour ouvrir le prototype.</noscript>
   </main>

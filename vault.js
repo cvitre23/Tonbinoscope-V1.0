@@ -52,23 +52,23 @@ export function newSalt() {
   return random(16);
 }
 
-export async function deriveKey(password, salt) {
+export async function deriveKey(password, salt, extractable = false) {
   const material = await crypto.subtle.importKey(
     'raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']
   );
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
-    material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    material, { name: 'AES-GCM', length: 256 }, extractable, ['encrypt', 'decrypt']
   );
 }
 
-export async function encryptDirectory(data, key, salt, year) {
+export async function encryptDirectory(data, key, salt, year, passkey) {
   const iv = random(12);
   const cipher = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv, additionalData: encoder.encode(String(year)) },
     key, encoder.encode(JSON.stringify(data))
   );
-  return { revision: crypto.randomUUID(), year, salt, iv, cipher };
+  return { revision: crypto.randomUUID(), year, salt, iv, cipher, ...(passkey && { passkey }) };
 }
 
 export async function decryptDirectory(record, key) {
