@@ -1,11 +1,12 @@
 const prefix = 'trombinoscope-demo:' + self.registration.scope + ':';
-const cacheName = prefix + 'v3.2-stable';
+const cacheName = prefix + 'v3.3';
 const files = [
   './', './index.html', './styles.css', './app.js', './vault.js', './passkey.js',
   './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'
 ].map(path => new URL(path, self.registration.scope).href);
 
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(
     files.map(url => new Request(url, { cache: 'reload' }))
   )));
