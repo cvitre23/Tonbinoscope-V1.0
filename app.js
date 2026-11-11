@@ -1,6 +1,6 @@
 import {
   schoolYear, openVault, readCurrent, replaceRecord, newSalt,
-  deriveKey, encryptDirectory, decryptDirectory
+  deriveKey, encryptDirectory, decryptDirectory, nextPurge, ageRecord
 } from './vault.js';
 import { createPasskey, readPasskey, protectKey, recoverKey } from './passkey.js';
 
@@ -19,6 +19,11 @@ let draftPhoto;
 let photoSelection = 0;
 let passkeySetup;
 let passkeyRequest;
+const idleMinutes = 5;
+const pickerGraceMs = 2 * 60 * 1000;
+let idleTimer;
+let pickerOpenedAt = 0;
+let hiddenAt = 0;
 const supportsPasskeys = !!(window.PublicKeyCredential && navigator.credentials);
 
 function demoDirectory() {
@@ -50,6 +55,8 @@ function showLock() {
 
 function lock() {
   session++;
+  clearTimeout(idleTimer);
+  pickerOpenedAt = 0;
   passkeyRequest?.abort();
   clearPasskeySetup();
   directory = key = activeClass = undefined;
@@ -66,6 +73,12 @@ function showPhoto(photo) {
   if (photo) preview.src = photo;
   else preview.removeAttribute('src');
   preview.hidden = !photo;
+  el('remove-photo').hidden = !photo;
+}
+
+function fillClassSelect(select, selected) {
+  select.replaceChildren(...(directory || []).map(group => new Option(group.name, group.id)));
+  if (selected) select.value = selected;
 }
 
 function resetStudentForm(student) {
@@ -74,6 +87,7 @@ function resetStudentForm(student) {
   draftPhoto = student?.photo;
   el('add-student').reset();
   el('first-name').value = student?.name || '';
+  fillClassSelect(el('student-class'), activeClass);
   el('student-form-title').textContent = student ? 'Modifier la fiche' : 'Ajouter une fiche fictive';
   el('save-student').textContent = student ? 'Enregistrer la fiche' : 'Ajouter la fiche';
   el('save-student').disabled = false;
@@ -103,6 +117,12 @@ function showDirectory() {
   if (current) el('classes').value = current.id;
   el('classes').disabled = !current;
   el('remove-class').hidden = !current;
+  el('rename-class').hidden = !current;
+  el('rename-class-name').value = current?.name || '';
+  if (!editingStudent) fillClassSelect(el('student-class'), current?.id);
+  el('idle-minutes').textContent = idleMinutes;
+  el('purge-date').textContent = '1er août ' + nextPurge().getFullYear();
+  armIdleLock();
   el('student-panel').hidden = !current;
   el('class-title').textContent = current?.name || '';
   el('empty').textContent = !current ? 'Ajoute une classe pour commencer.'
@@ -172,7 +192,16 @@ async function save(next, token, selected, message) {
   }
   const candidate = await encryptDirectory(next, key, previous.salt, previous.year, previous.passkey);
   if (token !== session) return false;
-  if (!await replaceRecord(db, previous.revision, candidate)) {
+  let replaced;
+  try {
+    replaced = await replaceRecord(db, previous.revision, candidate);
+  } catch (error) {
+    if (error?.name === 'QuotaExceededError') {
+      throw new Error('Espace de stockage insuffisant sur l’iPad. Rien n’a été modifié.');
+    }
+    throw error;
+  }
+  if (!replaced) {
     lock();
     await refreshRecord();
     showLock();
@@ -228,6 +257,7 @@ async function unlock(token, password) {
     }
     if (token !== session) return;
     record = candidate;
+    navigator.storage?.persist?.().catch(() => {});
   }
   key = nextKey;
   directory = next;
@@ -378,14 +408,14 @@ async function resizeImage(file) {
     const image = new Image();
     image.src = source;
     await image.decode();
-    const size = Math.min(320, image.naturalWidth, image.naturalHeight);
+    const size = Math.min(400, image.naturalWidth, image.naturalHeight);
     const side = Math.min(image.naturalWidth, image.naturalHeight);
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const context = canvas.getContext('2d', { alpha: false });
     context.drawImage(image, (image.naturalWidth - side) / 2,
       (image.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return canvas.toDataURL('image/jpeg', 0.82);
   } catch {
     throw new Error('Ce navigateur ne peut pas lire cette image. Essaie avec une photo JPEG.');
   } finally {
@@ -394,6 +424,7 @@ async function resizeImage(file) {
 }
 
 async function selectPhoto(input) {
+  pickerOpenedAt = 0;
   const file = input.files[0];
   input.value = '';
   if (!file || !directory || busy) return;
@@ -416,9 +447,22 @@ async function selectPhoto(input) {
 
 for (const [button, field] of [['take-photo', 'camera-file'], ['import-photo', 'library-file']]) {
   const input = el(field);
-  el(button).addEventListener('click', () => { if (directory && !busy) input.click(); });
+  el(button).addEventListener('click', () => {
+    if (!directory || busy) return;
+    pickerOpenedAt = Date.now();
+    input.click();
+  });
+  input.addEventListener('cancel', () => { pickerOpenedAt = 0; });
   input.addEventListener('change', () => selectPhoto(input));
 }
+el('remove-photo').addEventListener('click', () => {
+  if (busy) return;
+  photoSelection++;
+  draftPhoto = undefined;
+  showPhoto(undefined);
+  el('save-student').disabled = false;
+  el('photo-status').textContent = 'Photo retirée. Enregistre la fiche pour confirmer.';
+});
 el('cancel-edit').addEventListener('click', () => {
   if (!busy) resetStudentForm();
 });
@@ -450,10 +494,30 @@ function checkYearOnReturn() {
   }
 }
 
+// L’appareil photo ou la photothèque peuvent masquer la page : on tolère ce cas
+// pendant 2 minutes au plus. Toute autre mise en arrière-plan verrouille.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) lock();
-  else checkYearOnReturn();
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    if (!directory || !pickerOpenedAt || hiddenAt - pickerOpenedAt > pickerGraceMs) lock();
+    return;
+  }
+  if (directory && pickerOpenedAt && Date.now() - hiddenAt > pickerGraceMs) lock();
+  pickerOpenedAt = 0;
+  checkYearOnReturn();
 });
+
+function armIdleLock() {
+  clearTimeout(idleTimer);
+  if (directory) idleTimer = setTimeout(() => {
+    if (busy) return armIdleLock();
+    lock();
+    say('Verrouillage automatique après inactivité.');
+  }, idleMinutes * 60 * 1000);
+}
+for (const type of ['pointerdown', 'keydown', 'scroll']) {
+  document.addEventListener(type, () => { if (directory) armIdleLock(); }, { passive: true, capture: true });
+}
 window.addEventListener('pagehide', lock);
 window.addEventListener('pageshow', event => { if (event.persisted) checkYearOnReturn(); });
 
@@ -481,22 +545,56 @@ el('remove-class').addEventListener('click', () => run(async token => {
   if (!group || !confirm('Supprimer la classe « ' + group.name + ' » et toutes ses fiches ?')) return;
   await save(directory.filter(item => item.id !== group.id), token, undefined, 'Classe supprimée.');
 }));
+el('rename-class').addEventListener('submit', event => {
+  event.preventDefault();
+  run(async token => {
+    const name = el('rename-class-name').value.trim();
+    if (!name) throw new Error('Saisis un nom de classe.');
+    const next = directory.map(group => group.id === activeClass ? { ...group, name } : group);
+    await save(next, token, activeClass, 'Classe renommée.');
+  });
+});
+el('simulate-year').addEventListener('click', () => run(async token => {
+  if (!confirm('Simuler le 1er août ? Toutes les classes, fiches et photos de test seront effacées.')) return;
+  const revision = record?.revision;
+  lock();
+  if (!await ageRecord(db, revision)) {
+    await refreshRecord();
+    showLock();
+    say('Les données ont changé. Réessaie.');
+    return;
+  }
+  const expired = await refreshRecord();
+  showLock();
+  if (!expired) say('La purge n’a pas eu lieu. Signale ce résultat.');
+}));
 el('add-student').addEventListener('submit', event => {
   event.preventDefault();
   if (el('save-student').disabled) return;
   run(async token => {
     const group = directory.find(item => item.id === activeClass);
     if (!group) return;
+    const target = directory.find(item => item.id === el('student-class').value) || group;
     const name = el('first-name').value.trim();
     if (!name) throw new Error('Saisis un prénom fictif.');
     const previous = group.students.find(student => student.id === editingStudent);
-    const student = previous ? { ...previous, name, photo: draftPhoto } : {
-      id: crypto.randomUUID(), name, photo: draftPhoto, avatar: Math.floor(Math.random() * avatars.length)
+    const { photo: _old, ...kept } = previous || {};
+    const student = previous ? { ...kept, name, ...(draftPhoto && { photo: draftPhoto }) } : {
+      id: crypto.randomUUID(), name, ...(draftPhoto && { photo: draftPhoto }),
+      avatar: Math.floor(Math.random() * avatars.length)
     };
-    const students = previous ? group.students.map(item => item.id === student.id ? student : item)
-      : [...group.students, student];
-    const next = directory.map(item => item.id === group.id ? { ...group, students } : item);
-    if (await save(next, token, group.id, previous ? 'Fiche modifiée.' : 'Fiche ajoutée.')) {
+    const next = directory.map(item => {
+      let students = item.students.filter(entry => entry.id !== student.id);
+      if (item.id === target.id) {
+        const index = item.students.findIndex(entry => entry.id === student.id);
+        if (index >= 0) students = item.students.map(entry => entry.id === student.id ? student : entry);
+        else students = [...students, student];
+      }
+      return { ...item, students };
+    });
+    const message = !previous ? 'Fiche ajoutée.'
+      : target.id !== group.id ? 'Fiche déplacée vers « ' + target.name + ' ».' : 'Fiche modifiée.';
+    if (await save(next, token, target.id, message)) {
       resetStudentForm();
     }
   });
@@ -507,8 +605,15 @@ async function enableOffline() {
     if (!('serviceWorker' in navigator)) throw new Error();
     const worker = navigator.serviceWorker;
     const ready = () => { el('offline').textContent = 'Mode hors ligne prêt sur cet appareil.'; };
-    worker.addEventListener('controllerchange', () => { if (worker.controller) ready(); });
-    const registration = await worker.register('./sw.js');
+    const hadController = !!worker.controller;
+    worker.addEventListener('controllerchange', () => {
+      if (!worker.controller) return;
+      el('offline').textContent = hadController
+        ? 'Nouvelle version installée. Ferme puis rouvre le Trombinoscope pour l’utiliser.'
+        : 'Mode hors ligne prêt sur cet appareil.';
+    });
+    const registration = await worker.register('./sw.js', { updateViaCache: 'none' });
+    if (navigator.onLine) registration.update().catch(() => {});
     if (worker.controller) ready();
     const pending = registration.installing || registration.waiting;
     if (pending) pending.addEventListener('statechange', () => {

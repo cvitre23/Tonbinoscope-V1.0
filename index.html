@@ -16,7 +16,7 @@
 <body>
   <header class="hero">
     <div class="wrap">
-      <p class="eyebrow">DÉMONSTRATION SCOLAIRE · V3.2</p>
+      <p class="eyebrow">DÉMONSTRATION SCOLAIRE · V3.3</p>
       <h1>Trombinoscope</h1>
       <p>Les classes et leurs portraits, sur cet appareil.</p>
     </div>
@@ -48,6 +48,11 @@
             <select id="classes"></select>
             <button id="remove-class" class="plain" type="button">Supprimer la classe</button>
           </div>
+          <form id="rename-class">
+            <label for="rename-class-name">Renommer la classe affichée</label>
+            <input id="rename-class-name" maxlength="50" required autocomplete="off">
+            <button>Renommer</button>
+          </form>
           <form id="add-class">
             <label for="class-name">Nom de la nouvelle classe</label>
             <input id="class-name" maxlength="50" required>
@@ -59,12 +64,15 @@
           <form id="add-student">
             <label for="first-name">Prénom fictif</label>
             <input id="first-name" maxlength="50" required autocomplete="off">
+            <label for="student-class">Classe</label>
+            <select id="student-class"></select>
             <fieldset class="photo-field">
               <legend>Photo fictive (facultative)</legend>
               <img id="photo-preview" alt="Aperçu de la photo" hidden>
               <div class="actions" aria-describedby="photo-help">
                 <button id="take-photo" class="secondary" type="button">Prendre une photo</button>
                 <button id="import-photo" class="secondary" type="button">Importer une photo</button>
+                <button id="remove-photo" class="plain" type="button" hidden>Retirer la photo</button>
               </div>
               <input id="camera-file" type="file" accept="image/*" capture="environment" hidden>
               <input id="library-file" type="file" accept="image/*" hidden>
@@ -94,6 +102,12 @@
           <button id="cancel-passkey" class="secondary" type="button" hidden>Annuler</button>
         </div>
         <p id="passkey-status" class="small" role="status"></p>
+      </section>
+      <section class="panel test-zone" aria-labelledby="test-title">
+        <h3 id="test-title">Zone de test</h3>
+        <p class="small">Verrouillage automatique après <span id="idle-minutes"></span> minutes sans action. Prochaine purge annuelle : <strong id="purge-date"></strong>.</p>
+        <button id="simulate-year" class="plain" type="button">Simuler le passage au 1er août</button>
+        <p class="small">Ce bouton efface toutes les données de test, comme le ferait la purge annuelle.</p>
       </section>
     </section>
     <noscript>Active JavaScript dans le navigateur pour ouvrir le prototype.</noscript>
