@@ -54,3 +54,14 @@ form button, #reset { justify-self: start; margin-top: .2rem; }
 #rename-class { margin-top: .9rem; }
 .test-zone { margin-top: 1.5rem; border-style: dashed; }
 .card img, .avatar { width: 96px; height: 96px; }
+.portrait { position: relative; display: block; width: 96px; height: 96px; overflow: hidden; border-radius: .6rem; margin-block: .4rem; }
+.portrait.round { border-radius: 50%; margin: 0 auto .45rem; }
+.portrait img, .card .portrait img { display: block; width: 100%; height: 100%; margin: 0; border-radius: 0; object-fit: cover; }
+.watermark {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-35deg);
+  width: 150%; padding: .1rem 0; text-align: center; white-space: nowrap;
+  font-size: .68rem; font-weight: 900; letter-spacing: .02em; color: #fff;
+  background: rgba(160, 20, 20, .62); text-shadow: 0 0 2px #000;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+#photo-frame #photo-preview { width: 100%; height: 100%; margin: 0; border-radius: 0; }

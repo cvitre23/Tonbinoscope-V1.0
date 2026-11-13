@@ -73,6 +73,7 @@ function showPhoto(photo) {
   if (photo) preview.src = photo;
   else preview.removeAttribute('src');
   preview.hidden = !photo;
+  el('photo-frame').hidden = !photo;
   el('remove-photo').hidden = !photo;
 }
 
@@ -130,10 +131,18 @@ function showDirectory() {
   el('students').replaceChildren(...(current?.students || []).map(student => {
     const card = document.createElement('li');
     card.className = 'card';
-    const portrait = document.createElement(student.photo ? 'img' : 'span');
+    const portrait = document.createElement('span');
     if (student.photo) {
-      portrait.src = student.photo;
-      portrait.alt = '';
+      // Filigrane affiché par-dessus la photo : toute capture d’écran le contient.
+      portrait.className = 'portrait round';
+      const image = document.createElement('img');
+      image.src = student.photo;
+      image.alt = '';
+      const mark = document.createElement('span');
+      mark.className = 'watermark';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = 'CONFIDENTIEL';
+      portrait.append(image, mark);
     } else {
       portrait.className = 'avatar';
       portrait.setAttribute('aria-hidden', 'true');
